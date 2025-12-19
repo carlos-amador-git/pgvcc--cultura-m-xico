@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Hero } from './components/Hero';
 import { AtlasMap } from './components/AtlasMap';
 import { Dashboard } from './components/Dashboard';
 import { InfrastructureList } from './components/InfrastructureList';
 import { Patrimonio } from './components/Patrimonio';
-import { AppMode } from './types';
+import { AppMode, ScheduledVisit } from './types';
 import { LayoutGrid, Building2, Menu, X, Globe } from 'lucide-react';
-
-// --- Custom Navigation Icons ---
+import { SwitchTransition, CSSTransition } from 'react-transition-group';
 
 const IconHacienda = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -17,7 +16,7 @@ const IconHacienda = ({ className }: { className?: string }) => (
     <path d="M10 22v-4a2 2 0 1 1 4 0v4" />
     <rect x="6" y="14" width="2" height="3" rx="0.5" />
     <rect x="16" y="14" width="2" height="3" rx="0.5" />
-    <circle cx="12" cy="7" r="1" fill="currentColor" className="text-brand-300" stroke="none" />
+    <circle cx="12" cy="7" r="1" fill="currentColor" className="text-brand-300" stroke="none" strokeWidth="0" />
   </svg>
 );
 
@@ -40,175 +39,189 @@ const IconPyramid = ({ className }: { className?: string }) => (
   </svg>
 );
 
-// -------------------------------
-
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.PUBLIC);
   const [activeView, setActiveView] = useState<'home' | 'atlas' | 'patrimonio' | 'dashboard' | 'infrastructure'>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialHeritageId, setInitialHeritageId] = useState<number | null>(null);
+  
+  // Usamos una referencia para evitar el error findDOMNode de react-transition-group
+  const nodeRef = useRef<HTMLDivElement>(null);
+  
+  const SCHEDULED_VISITS_STORAGE_KEY = 'pgvcc.scheduledVisits';
+
+  const isScheduledVisit = (value: unknown): value is ScheduledVisit => {
+    const v = value as ScheduledVisit;
+    return Boolean(
+      v &&
+        typeof v === 'object' &&
+        typeof v.id === 'string' &&
+        typeof v.siteId === 'number' &&
+        typeof v.siteTitle === 'string' &&
+        typeof v.date === 'string' &&
+        typeof v.timeSlot === 'string' &&
+        typeof v.type === 'string' &&
+        (v.status === 'Pending' || v.status === 'Confirmed' || v.status === 'Completed') &&
+        typeof v.requesterName === 'string' &&
+        (v.title === undefined || typeof v.title === 'string') &&
+        (v.description === undefined || typeof v.description === 'string') &&
+        (v.location === undefined || typeof v.location === 'string') &&
+        (v.labelColor === undefined || typeof v.labelColor === 'string') &&
+        (v.reminders === undefined || (Array.isArray(v.reminders) && v.reminders.every(r => typeof r === 'number')))
+    );
+  };
+
+  // Shared state for scheduled visits
+  const [scheduledVisits, setScheduledVisits] = useState<ScheduledVisit[]>(() => {
+    try {
+      const raw = localStorage.getItem(SCHEDULED_VISITS_STORAGE_KEY);
+      if (!raw) throw new Error('missing');
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) throw new Error('invalid');
+      const visits = parsed.filter(isScheduledVisit);
+      if (visits.length > 0) return visits;
+    } catch {}
+    return [
+      { id: 'v1', siteId: 1, siteTitle: 'Chichén Itzá', date: '2025-12-17', timeSlot: '09:15 - 10:15', type: 'Escolar', status: 'Confirmed', requesterName: 'Escuela Primaria Benito Juárez' }
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCHEDULED_VISITS_STORAGE_KEY, JSON.stringify(scheduledVisits));
+    } catch {}
+  }, [scheduledVisits]);
 
   const handleNavigateToHeritage = (id: number) => {
     setInitialHeritageId(id);
     setActiveView('patrimonio');
   };
 
-  // Determine what to render based on view
-  const renderContent = () => {
-    switch (activeView) {
-      case 'home': return <Hero />;
-      case 'atlas': return <AtlasMap onNavigateToHeritage={handleNavigateToHeritage} />;
-      case 'patrimonio': return <Patrimonio initialSiteId={initialHeritageId} />;
-      case 'dashboard': return <Dashboard />;
-      case 'infrastructure': return <InfrastructureList />;
-      default: return <Hero />;
-    }
-  };
-
   const handleNavClick = (view: typeof activeView, newMode: AppMode) => {
     setMode(newMode);
     setActiveView(view);
     setMobileMenuOpen(false);
-    // Reset initial heritage ID when navigating manually to prevent auto-opening
-    if (view === 'patrimonio') {
-        setInitialHeritageId(null);
+    if (view === 'patrimonio') setInitialHeritageId(null);
+  };
+
+  const handleAddVisit = (visit: ScheduledVisit) => {
+    setScheduledVisits(prev => [visit, ...prev]);
+  };
+
+  const handleMoveVisit = (visitId: string, updates: Pick<ScheduledVisit, 'date' | 'timeSlot'>) => {
+    setScheduledVisits(prev => prev.map(v => (v.id === visitId ? { ...v, ...updates } : v)));
+  };
+
+  const handleUpsertVisit = (visit: ScheduledVisit) => {
+    setScheduledVisits(prev => {
+      const existing = prev.find(v => v.id === visit.id);
+      if (!existing) return [visit, ...prev];
+      return prev.map(v => (v.id === visit.id ? { ...v, ...visit } : v));
+    });
+  };
+
+  const handleDeleteVisit = (visitId: string) => {
+    setScheduledVisits(prev => prev.filter(v => v.id !== visitId));
+  };
+
+  const renderContent = () => {
+    switch (activeView) {
+      case 'home': return <Hero />;
+      case 'atlas': return <AtlasMap onNavigateToHeritage={handleNavigateToHeritage} />;
+      case 'patrimonio': return <Patrimonio initialSiteId={initialHeritageId} onScheduleVisit={handleAddVisit} scheduledVisits={scheduledVisits} onMoveVisit={handleMoveVisit} onUpsertVisit={handleUpsertVisit} onDeleteVisit={handleDeleteVisit} />;
+      case 'dashboard': return <Dashboard onNavigate={(v) => setActiveView(v)} />;
+      case 'infrastructure': return <InfrastructureList scheduledVisits={scheduledVisits} onMoveVisit={handleMoveVisit} onUpsertVisit={handleUpsertVisit} onDeleteVisit={handleDeleteVisit} />;
+      default: return <Hero />;
     }
   };
 
   return (
-    <div className="min-h-screen font-sans bg-gray-50 flex flex-col">
-      {/* Navigation Bar */}
-      <nav className="sticky top-0 z-50 w-full border-b border-gray-200 bg-white/80 backdrop-blur-md">
+    <div className="min-h-screen font-sans bg-slate-50 flex flex-col overflow-x-hidden">
+      <nav className="sticky top-0 z-50 w-full border-b border-gray-200 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavClick('home', AppMode.PUBLIC)}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white shadow-lg shadow-brand-500/20">
+          <div className="flex items-center gap-2 cursor-pointer group" onClick={() => handleNavClick('home', AppMode.PUBLIC)}>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white shadow-xl shadow-brand-500/20 group-hover:scale-110 transition-transform">
               <span className="font-serif text-xl font-bold">M</span>
             </div>
             <div className="flex flex-col">
-                <span className="text-lg font-bold leading-none text-slate-900 tracking-tight">Cultura</span>
-                <span className="text-[10px] font-medium uppercase tracking-widest text-brand-600">Gobierno de México</span>
+                <span className="text-lg font-bold leading-none text-slate-950 tracking-tight">Cultura</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-brand-600">México</span>
             </div>
           </div>
 
-          {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-8">
-            <div className="flex items-center gap-6 text-sm font-medium text-slate-600">
-               <button 
-                onClick={() => handleNavClick('home', AppMode.PUBLIC)}
-                className={`flex items-center gap-2 hover:text-brand-600 transition-colors ${activeView === 'home' ? 'text-brand-600 font-semibold' : ''}`}
-               >
-                 <IconHacienda className="h-4 w-4" />
-                 Inicio
+          <div className="hidden md:flex items-center gap-8 font-bold uppercase tracking-widest text-[10px]">
+            <div className="flex items-center gap-6 text-slate-500">
+               <button onClick={() => handleNavClick('home', AppMode.PUBLIC)} className={`flex items-center gap-2 hover:text-brand-600 transition-all ${activeView === 'home' ? 'text-brand-600 scale-105' : 'hover:scale-105'}`}>
+                 <IconHacienda className="h-4 w-4" /> Inicio
                </button>
-               <button 
-                onClick={() => handleNavClick('atlas', AppMode.PUBLIC)}
-                className={`flex items-center gap-2 hover:text-brand-600 transition-colors ${activeView === 'atlas' ? 'text-brand-600 font-semibold' : ''}`}
-               >
-                 <IconAtlas className="h-4 w-4" />
-                 Atlas Cultural
+               <button onClick={() => handleNavClick('atlas', AppMode.PUBLIC)} className={`flex items-center gap-2 hover:text-brand-600 transition-all ${activeView === 'atlas' ? 'text-brand-600 scale-105' : 'hover:scale-105'}`}>
+                 <IconAtlas className="h-4 w-4" /> Atlas
                </button>
-               <button 
-                onClick={() => handleNavClick('patrimonio', AppMode.PUBLIC)}
-                className={`flex items-center gap-2 hover:text-brand-600 transition-colors ${activeView === 'patrimonio' ? 'text-brand-600 font-semibold' : ''}`}
-               >
-                 <IconPyramid className="h-4 w-4" />
-                 Patrimonio
+               <button onClick={() => handleNavClick('patrimonio', AppMode.PUBLIC)} className={`flex items-center gap-2 hover:text-brand-600 transition-all ${activeView === 'patrimonio' ? 'text-brand-600 scale-105' : 'hover:scale-105'}`}>
+                 <IconPyramid className="h-4 w-4" /> Patrimonio
                </button>
             </div>
-            
-            <div className="h-6 w-px bg-gray-200"></div>
-
+            <div className="h-6 w-px bg-slate-100"></div>
             <div className="flex items-center gap-3">
-                <button 
-                    onClick={() => handleNavClick('dashboard', AppMode.ADMIN)}
-                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all
-                    ${mode === AppMode.ADMIN && activeView === 'dashboard'
-                        ? 'bg-slate-900 text-white shadow-lg' 
-                        : 'bg-gray-100 text-slate-600 hover:bg-gray-200'}`}
-                >
-                    <LayoutGrid className="h-4 w-4" />
-                    Dashboard
-                </button>
-                 <button 
-                    onClick={() => handleNavClick('infrastructure', AppMode.ADMIN)}
-                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all
-                    ${mode === AppMode.ADMIN && activeView === 'infrastructure'
-                        ? 'bg-slate-900 text-white shadow-lg' 
-                        : 'bg-gray-100 text-slate-600 hover:bg-gray-200'}`}
-                >
-                    <Building2 className="h-4 w-4" />
-                    Infraestructura
-                </button>
+                <button onClick={() => handleNavClick('dashboard', AppMode.ADMIN)} className={`px-4 py-2 rounded-xl transition-all ${activeView === 'dashboard' ? 'bg-slate-950 text-white shadow-xl scale-105' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Dashboard</button>
+                <button onClick={() => handleNavClick('infrastructure', AppMode.ADMIN)} className={`px-4 py-2 rounded-xl transition-all ${activeView === 'infrastructure' ? 'bg-slate-950 text-white shadow-xl scale-105' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Gestión</button>
             </div>
           </div>
 
-          {/* Mobile Menu Button */}
-          <button className="md:hidden p-2 text-slate-600" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            {mobileMenuOpen ? <X /> : <Menu />}
-          </button>
-        </div>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="absolute top-20 left-0 w-full bg-white border-b shadow-xl md:hidden flex flex-col p-4 gap-4 z-40">
-             <button onClick={() => handleNavClick('home', AppMode.PUBLIC)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left">
-                <IconHacienda className="h-5 w-5 text-brand-500"/> Inicio
-             </button>
-             <button onClick={() => handleNavClick('atlas', AppMode.PUBLIC)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left">
-                <IconAtlas className="h-5 w-5 text-brand-500"/> Atlas Cultural
-             </button>
-             <button onClick={() => handleNavClick('patrimonio', AppMode.PUBLIC)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left">
-                <IconPyramid className="h-5 w-5 text-brand-500"/> Patrimonio
-             </button>
-             <div className="h-px w-full bg-gray-100 my-2"></div>
-             <p className="text-xs font-bold text-slate-400 uppercase px-3">Administración</p>
-             <button onClick={() => handleNavClick('dashboard', AppMode.ADMIN)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left">
-                <LayoutGrid className="h-5 w-5 text-slate-700"/> Dashboard (TMI)
-             </button>
-             <button onClick={() => handleNavClick('infrastructure', AppMode.ADMIN)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left">
-                <Building2 className="h-5 w-5 text-slate-700"/> Infraestructura (SGIC)
-             </button>
+          {/* Mobile Menu Trigger */}
+          <div className="md:hidden">
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-slate-600">
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
           </div>
-        )}
+        </div>
       </nav>
 
-      {/* Main Content Area */}
-      <main className="flex-1 transition-all duration-300 ease-in-out">
-        {renderContent()}
-      </main>
-
-      {/* Simplified Footer */}
-      {mode === AppMode.PUBLIC && activeView === 'home' && (
-        <footer className="bg-slate-900 text-white py-12">
-            <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-4 gap-8">
-                <div>
-                    <h4 className="font-serif text-xl mb-4">Cultura</h4>
-                    <p className="text-slate-400 text-sm">Secretaría de Cultura del Gobierno de México.</p>
-                </div>
-                <div>
-                    <h5 className="font-bold mb-4 text-sm uppercase tracking-wider text-slate-500">Explora</h5>
-                    <ul className="space-y-2 text-sm text-slate-300">
-                        <li>Semilleros Creativos</li>
-                        <li>Museos</li>
-                        <li>Patrimonio</li>
-                    </ul>
-                </div>
-                <div>
-                    <h5 className="font-bold mb-4 text-sm uppercase tracking-wider text-slate-500">Trámites</h5>
-                    <ul className="space-y-2 text-sm text-slate-300">
-                        <li>Convocatorias</li>
-                        <li>Ventanilla Digital</li>
-                        <li>Denuncias</li>
-                    </ul>
-                </div>
-                <div>
-                    <div className="flex items-center gap-2 mb-4">
-                        <Globe className="h-5 w-5"/> <span className="text-sm font-medium">Español</span>
-                    </div>
-                </div>
-            </div>
-        </footer>
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[60] bg-white pt-24 px-6 md:hidden animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex flex-col gap-8 font-black uppercase tracking-[0.3em] text-xs">
+             <button onClick={() => handleNavClick('home', AppMode.PUBLIC)} className="text-left py-4 border-b border-slate-100 flex items-center justify-between">Inicio <IconHacienda className="h-4 w-4" /></button>
+             <button onClick={() => handleNavClick('atlas', AppMode.PUBLIC)} className="text-left py-4 border-b border-slate-100 flex items-center justify-between">Atlas <IconAtlas className="h-4 w-4" /></button>
+             <button onClick={() => handleNavClick('patrimonio', AppMode.PUBLIC)} className="text-left py-4 border-b border-slate-100 flex items-center justify-between">Patrimonio <IconPyramid className="h-4 w-4" /></button>
+             <div className="pt-10 flex flex-col gap-4">
+                <button onClick={() => handleNavClick('dashboard', AppMode.ADMIN)} className="w-full bg-slate-950 text-white py-5 rounded-2xl shadow-xl">Dashboard Administrativo</button>
+                <button onClick={() => handleNavClick('infrastructure', AppMode.ADMIN)} className="w-full bg-slate-100 text-slate-600 py-5 rounded-2xl">Gestión de Activos</button>
+             </div>
+          </div>
+        </div>
       )}
+
+      <main className="flex-1 transition-all duration-300 relative">
+        <SwitchTransition mode="out-in">
+          <CSSTransition
+            key={activeView}
+            nodeRef={nodeRef}
+            timeout={500}
+            classNames="page-transition"
+            unmountOnExit
+          >
+            <div ref={nodeRef}>
+              {renderContent()}
+            </div>
+          </CSSTransition>
+        </SwitchTransition>
+      </main>
+      
+      {/* Footer minimalista tipo Arts & Culture */}
+      <footer className="bg-white border-t border-slate-100 py-12 px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 items-center justify-center flex rounded bg-slate-950 text-white font-serif font-bold text-sm">M</div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Secretaría de Cultura • México 2025</span>
+          </div>
+          <div className="flex gap-8 text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">
+            <a href="#" className="hover:text-brand-500 transition-colors">Privacidad</a>
+            <a href="#" className="hover:text-brand-500 transition-colors">Transparencia</a>
+            <a href="#" className="hover:text-brand-500 transition-colors">Contacto</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -1,316 +1,225 @@
-import React, { useState, useMemo } from 'react';
-import { MapPin, Users, Building2, Landmark, Check, Filter } from 'lucide-react';
-import { SEMILLEROS_DATA, HERITAGE_SITES, ASSETS_DATA } from '../constants';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Landmark, ChevronDown, Loader2, Globe, Sparkles, Building2, MapPin } from 'lucide-react';
+import { HERITAGE_SITES, ASSETS_DATA } from '../constants';
 
 interface AtlasMapProps {
   onNavigateToHeritage?: (id: number) => void;
 }
 
-// Extract unique states for the filter
-const ALL_ITEMS = [...SEMILLEROS_DATA, ...HERITAGE_SITES, ...ASSETS_DATA];
-const STATES = Array.from(new Set(ALL_ITEMS.map(item => {
-    // Logic to extract state from "City, State" or just "State" strings
+declare const L: any; // Integración global vía script tag
+
+const ALL_STATES = Array.from(new Set([...HERITAGE_SITES, ...ASSETS_DATA].map(item => {
     const parts = item.location.split(',');
     return parts.length > 1 ? parts[1].trim() : parts[0].trim();
 }))).sort();
 
+// Conversor de Coordenadas: % top/left a Lat/Lng aproximado para México
+const toLatLng = (top: number, left: number) => {
+    const lat = 32.7 - (top * (32.7 - 14.5) / 100);
+    const lng = -117.1 + (left * (117.1 - 86.7) / 100);
+    return [lat, lng];
+};
+
 export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
-  // Layer Toggles
-  const [layers, setLayers] = useState({
-    patrimonio: true,
-    semilleros: true,
-    infraestructura: true,
-    alerta: true
-  });
-
-  // Geo Filters
+  const [layers, setLayers] = useState({ patrimonio: true, infraestructura: true });
   const [selectedState, setSelectedState] = useState('Todos');
-  const [municipalityFilter, setMunicipalityFilter] = useState('');
+  const [isMapReady, setIsMapReady] = useState(false);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
 
-  const toggleLayer = (layer: keyof typeof layers) => {
-    setLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
-  };
+  // Inicialización de Leaflet
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
 
-  // Quick Filters (Sidebar Buttons)
-  const setQuickFilter = (type: 'all' | 'semilleros' | 'infrastructure') => {
-      if (type === 'all') {
-          setLayers({ patrimonio: true, semilleros: true, infraestructura: true, alerta: true });
-      } else if (type === 'semilleros') {
-          setLayers({ patrimonio: false, semilleros: true, infraestructura: false, alerta: false });
-      } else if (type === 'infrastructure') {
-          setLayers({ patrimonio: true, semilleros: false, infraestructura: true, alerta: true });
-      }
-  };
+    const map = L.map(mapContainerRef.current, {
+        zoomControl: false,
+        attributionControl: false
+    }).setView([23.6, -102.5], 5);
 
-  const activeTab = useMemo(() => {
-     if (layers.patrimonio && layers.semilleros && layers.infraestructura) return 'all';
-     if (layers.semilleros && !layers.patrimonio && !layers.infraestructura) return 'semilleros';
-     if (!layers.semilleros && (layers.patrimonio || layers.infraestructura)) return 'infrastructure';
-     return 'custom';
-  }, [layers]);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 18
+    }).addTo(map);
 
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
-  // Filtering Logic
-  const checkGeoFilter = (location: string) => {
-     if (selectedState !== 'Todos') {
-         if (!location.includes(selectedState)) return false;
-     }
-     if (municipalityFilter) {
-         if (!location.toLowerCase().includes(municipalityFilter.toLowerCase())) return false;
-     }
-     return true;
-  };
+    mapInstanceRef.current = map;
+    setIsMapReady(true);
 
-  const filteredSemilleros = useMemo(() => SEMILLEROS_DATA.filter(item => 
-      layers.semilleros && checkGeoFilter(item.location)
-  ), [layers.semilleros, selectedState, municipalityFilter]);
+    return () => {
+        map.remove();
+    };
+  }, []);
 
-  const filteredHeritage = useMemo(() => HERITAGE_SITES.filter(site => 
-      layers.patrimonio && checkGeoFilter(site.location)
-  ), [layers.patrimonio, selectedState, municipalityFilter]);
+  // Manejo de Marcadores dinámicos
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isMapReady) return;
 
-  const filteredAssets = useMemo(() => ASSETS_DATA.filter(asset => {
-      const isCritical = asset.state === 'Critical';
-      
-      // Filter by layer visibility
-      if (isCritical) {
-          if (!layers.alerta) return false;
-      } else {
-          if (!layers.infraestructura) return false;
-      }
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
 
-      // Filter by Geo
-      return checkGeoFilter(asset.location);
-  }), [layers.infraestructura, layers.alerta, selectedState, municipalityFilter]); 
+    const map = mapInstanceRef.current;
+
+    if (layers.patrimonio) {
+        HERITAGE_SITES.forEach(site => {
+            if (selectedState !== 'Todos' && !site.location.includes(selectedState)) return;
+
+            const icon = L.divIcon({
+                className: 'custom-marker',
+                html: `
+                    <div class="relative group">
+                        <div class="h-9 w-9 rounded-full bg-[#ec4899] border-[3px] border-white shadow-[0_0_20px_rgba(236,72,153,0.6)] flex items-center justify-center transition-all hover:scale-125">
+                            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        </div>
+                        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-[#ec4899]/20 animate-ping"></div>
+                    </div>
+                `,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+
+            const marker = L.marker(toLatLng(site.coordinates.top, site.coordinates.left), { icon })
+                .addTo(map)
+                .on('click', () => onNavigateToHeritage?.(site.id))
+                .bindTooltip(site.title, { direction: 'top', className: 'rounded-xl shadow-2xl px-4 py-2 font-bold bg-slate-900 text-white' });
+            
+            markersRef.current.push(marker);
+        });
+    }
+
+    if (layers.infraestructura) {
+        ASSETS_DATA.forEach(asset => {
+            if (selectedState !== 'Todos' && !asset.location.includes(selectedState)) return;
+
+            const icon = L.divIcon({
+                className: 'custom-marker',
+                html: `<div class="h-4 w-4 bg-[#2563eb] rounded-full border-[2.5px] border-white shadow-lg transition-transform hover:scale-150"></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+            });
+
+            const marker = L.marker(toLatLng(asset.coordinates.top, asset.coordinates.left), { icon })
+                .addTo(map)
+                .bindTooltip(`${asset.name}`, { direction: 'top', className: 'rounded-lg bg-white text-slate-800 font-bold' });
+            
+            markersRef.current.push(marker);
+        });
+    }
+
+    if (selectedState !== 'Todos' && markersRef.current.length > 0) {
+        const group = L.featureGroup(markersRef.current);
+        map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 8 });
+    }
+
+  }, [layers, selectedState, isMapReady, onNavigateToHeritage]);
+
+  const filteredHeritage = useMemo(() => 
+    HERITAGE_SITES.filter(site => layers.patrimonio && (selectedState === 'Todos' || site.location.includes(selectedState))),
+    [layers.patrimonio, selectedState]
+  );
+
+  const filteredAssets = useMemo(() => 
+    ASSETS_DATA.filter(asset => layers.infraestructura && (selectedState === 'Todos' || asset.location.includes(selectedState))),
+    [layers.infraestructura, selectedState]
+  );
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full flex-col lg:flex-row relative">
-      {/* Sidebar / List View */}
-      <div className="w-full bg-white lg:w-96 lg:border-r overflow-y-auto z-10 shadow-xl flex flex-col">
-        <div className="p-6 sticky top-0 bg-white/95 backdrop-blur z-10 border-b shrink-0">
-          <h2 className="mb-2 font-serif text-2xl font-bold text-slate-900">Atlas Cultural</h2>
-          <p className="text-sm text-slate-500 mb-4">Mapeo del ecosistema cultural en tiempo real.</p>
+    <div className="flex h-[calc(100vh-80px)] w-full flex-col lg:flex-row relative bg-white overflow-hidden">
+      <div className="w-full bg-white lg:w-96 lg:border-r overflow-y-auto z-20 flex flex-col border-slate-100 shadow-[20px_0_40px_-15px_rgba(0,0,0,0.03)]">
+        <div className="p-10 sticky top-0 bg-white/95 backdrop-blur z-20 border-b shrink-0">
+          <h2 className="mb-2 font-serif text-4xl font-bold text-slate-900 tracking-tight leading-none">Atlas Cultural</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mb-10 italic">Plataforma de Consulta Nacional</p>
           
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setQuickFilter('all')}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeTab === 'all' ? 'bg-slate-900 text-white' : 'hover:bg-slate-100'}`}
-            >
-              Todo
-            </button>
-            <button 
-               onClick={() => setQuickFilter('semilleros')}
-               className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeTab === 'semilleros' ? 'bg-brand-600 text-white border-brand-600' : 'hover:bg-slate-100'}`}
-            >
-              Semilleros
-            </button>
-            <button 
-               onClick={() => setQuickFilter('infrastructure')}
-               className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeTab === 'infrastructure' ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-slate-100'}`}
-            >
-              Recintos
-            </button>
+          <div className="space-y-4">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtro por Estado</label>
+              <div className="relative group">
+                <select 
+                    value={selectedState}
+                    onChange={(e) => setSelectedState(e.target.value)}
+                    className="w-full bg-slate-50 border-slate-200 text-slate-700 text-xs font-bold rounded-2xl py-4.5 px-6 focus:ring-4 appearance-none cursor-pointer border hover:bg-white"
+                >
+                    <option value="Todos">Territorio Nacional</option>
+                    {ALL_STATES.map(state => <option key={state} value={state}>{state}</option>)}
+                </select>
+                <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              </div>
           </div>
         </div>
 
-        <div className="p-4 space-y-4 overflow-y-auto flex-1">
-          {filteredSemilleros.length === 0 && filteredHeritage.length === 0 && filteredAssets.length === 0 && (
-              <div className="text-center py-10 text-slate-400 text-sm">
-                  No hay resultados para los filtros seleccionados.
-              </div>
-          )}
-
-          {filteredSemilleros.length > 0 && (
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Semilleros Creativos ({filteredSemilleros.length})</h3>
+        <div className="p-6 space-y-6 flex-1 bg-slate-50/10">
+          {/* Listado de Patrimonio */}
+          {filteredHeritage.length > 0 && (
               <div className="space-y-4">
-                {filteredSemilleros.map((item) => (
-                  <div key={`sem-${item.id}`} className="group relative overflow-hidden rounded-xl border bg-white transition-all hover:shadow-md cursor-pointer hover:border-brand-200">
-                    <div className="aspect-video w-full overflow-hidden">
-                      <img src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest border-b pb-2">Patrimonio Nacional</h3>
+                  {filteredHeritage.map((site) => (
+                    <div key={`her-${site.id}`} onClick={() => onNavigateToHeritage?.(site.id)} className="p-5 bg-white border border-slate-100 rounded-[1.5rem] hover:border-brand-200 transition-all cursor-pointer group shadow-sm hover:shadow-xl hover:-translate-y-1">
+                        <div className="flex gap-4">
+                            <img src={site.image} className="w-16 h-16 rounded-2xl object-cover shrink-0 shadow-inner bg-slate-100" />
+                            <div>
+                                <span className="text-[8px] font-bold text-brand-500 uppercase tracking-widest block mb-0.5">Tesoro</span>
+                                <h4 className="font-bold text-sm text-slate-900 group-hover:text-brand-600 leading-tight mb-1">{site.title}</h4>
+                                <p className="text-[10px] text-slate-400">{site.location}</p>
+                            </div>
+                        </div>
                     </div>
-                    <div className="p-4">
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-xs font-semibold uppercase text-brand-600">{item.discipline}</span>
-                        <span className="flex items-center text-xs text-slate-400">
-                          <Users className="mr-1 h-3 w-3" /> {item.participants}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-slate-900">{item.name}</h3>
-                      <p className="text-sm text-slate-500 flex items-center mt-1">
-                        <MapPin className="h-3 w-3 mr-1" /> {item.location}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
-            </div>
           )}
 
-          {(filteredHeritage.length > 0 || filteredAssets.length > 0) && (
-            <div className="mt-8">
-               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Recintos e Infraestructura ({filteredHeritage.length + filteredAssets.length})</h3>
-               <div className="space-y-4">
-                  {filteredHeritage.map((site) => (
-                      <div key={`her-${site.id}`} onClick={() => onNavigateToHeritage?.(site.id)} className="group flex gap-4 p-3 rounded-xl border bg-white transition-all hover:shadow-md cursor-pointer hover:border-blue-200">
-                          <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                              <img src={site.image} alt={site.title} className="h-full w-full object-cover"/>
-                          </div>
-                          <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-brand-50 text-brand-700">Patrimonio</span>
-                              </div>
-                              <h3 className="font-bold text-slate-900 text-sm">{site.title}</h3>
-                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">{site.description}</p>
-                          </div>
-                      </div>
-                  ))}
+          {/* Listado de Infraestructura */}
+          {filteredAssets.length > 0 && (
+              <div className="space-y-4">
+                  <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest border-b pb-2">Proyectos PAICE</h3>
                   {filteredAssets.map((asset) => (
-                      <div key={`ast-${asset.id}`} className="group flex gap-4 p-3 rounded-xl border bg-white transition-all hover:shadow-md cursor-pointer hover:border-blue-200">
-                          <div className="h-20 w-20 shrink-0 rounded-lg bg-slate-100 flex items-center justify-center">
-                              <Building2 className="h-8 w-8 text-slate-400" />
-                          </div>
-                          <div>
-                               <div className="flex items-center gap-2 mb-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{asset.type}</span>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${asset.state === 'Critical' ? 'bg-red-500' : 'bg-slate-400'}`}></span>
-                              </div>
-                              <h3 className="font-bold text-slate-900 text-sm">{asset.name}</h3>
-                              <p className="text-xs text-slate-500 mt-1">ID: {asset.id}</p>
-                          </div>
-                      </div>
+                    <div key={`as-${asset.id}`} className="p-5 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm group border-l-4 border-l-blue-100">
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="text-[8px] font-black text-blue-600 uppercase tracking-widest">{asset.type}</span>
+                            <span className="text-[9px] font-bold text-slate-400">${asset.amount?.toLocaleString()}</span>
+                        </div>
+                        <h4 className="font-bold text-sm text-slate-800 group-hover:text-blue-600 transition-colors leading-tight mb-1">{asset.name}</h4>
+                        <div className="flex items-center text-[10px] text-slate-400 font-medium">
+                            <MapPin className="w-2.5 h-2.5 mr-1" /> {asset.location}
+                        </div>
+                    </div>
                   ))}
-               </div>
-            </div>
+              </div>
+          )}
+
+          {filteredHeritage.length === 0 && filteredAssets.length === 0 && (
+              <div className="py-20 text-center">
+                  <Globe className="w-10 h-10 text-slate-200 mx-auto mb-4" />
+                  <p className="text-sm text-slate-400 italic">No hay resultados en esta zona con las capas seleccionadas.</p>
+              </div>
           )}
         </div>
       </div>
 
-      {/* Map Simulation */}
-      <div className="relative flex-1 bg-slate-50 overflow-hidden">
-        {/* Real Map Background using iframe */}
-        <div className="absolute inset-0 z-0">
-             <iframe 
-                width="100%" 
-                height="100%" 
-                frameBorder="0" 
-                scrolling="no" 
-                marginHeight={0} 
-                marginWidth={0} 
-                src="https://www.openstreetmap.org/export/embed.html?bbox=-118.36914062500001%2C14.39211326442651%2C-86.044921875%2C32.65787574268685&amp;layer=mapnik" 
-                className="w-full h-full opacity-70 grayscale-[30%] pointer-events-none"
-                style={{filter: 'contrast(1.1) brightness(1.05)'}}
-             ></iframe>
-             <div className="absolute inset-0 bg-blue-900/5 mix-blend-multiply pointer-events-none"></div>
-        </div>
-        
-        {/* Pins */}
-        {filteredHeritage.map((site) => (
-          <div 
-            key={`pin-her-${site.id}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 hover:z-20 transition-all duration-300"
-            style={{ top: `${site.coordinates.top}%`, left: `${site.coordinates.left}%` }}
-            onClick={() => onNavigateToHeritage?.(site.id)}
-          >
-             <div className="relative group cursor-pointer">
-                <div className="h-3 w-3 md:h-4 md:w-4 rounded-full bg-brand-500 animate-ping absolute opacity-50"></div>
-                <div className="h-3 w-3 md:h-4 md:w-4 rounded-full bg-brand-600 border-2 border-white shadow-lg transform transition group-hover:scale-125 group-hover:bg-brand-500 flex items-center justify-center">
-                    <Landmark className="h-2 w-2 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-48 bg-white p-3 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none transform translate-y-2 group-hover:translate-y-0 text-center z-30">
-                    <div className="font-bold text-slate-900 text-xs">{site.title}</div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wide mt-1">{site.location}</div>
-                </div>
-             </div>
-          </div>
-        ))}
-
-        {filteredSemilleros.map((item) => (
-          <div 
-            key={`pin-sem-${item.id}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 hover:z-20 transition-all duration-300"
-            style={{ top: `${item.coordinates.top}%`, left: `${item.coordinates.left}%` }}
-          >
-             <div className="relative group cursor-pointer">
-                <div className="h-2.5 w-2.5 md:h-3 md:w-3 rounded-full bg-indigo-600 border border-white shadow-md transform transition group-hover:scale-125 group-hover:bg-indigo-500"></div>
-                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-40 bg-white p-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none transform translate-y-2 group-hover:translate-y-0 text-center z-30">
-                    <div className="font-bold text-slate-900 text-xs">{item.name}</div>
-                    <div className="text-[10px] text-indigo-600 font-medium">{item.discipline}</div>
-                </div>
-             </div>
-          </div>
-        ))}
-
-        {filteredAssets.map((asset) => (
-          <div 
-            key={`pin-ast-${asset.id}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 hover:z-20 transition-all duration-300"
-            style={{ top: `${asset.coordinates.top}%`, left: `${asset.coordinates.left}%` }}
-          >
-             <div className="relative group cursor-pointer">
-                <div className={`h-2.5 w-2.5 md:h-3 md:w-3 rounded-sm border border-white shadow-md transform transition group-hover:scale-125 ${asset.state === 'Critical' ? 'bg-red-500' : 'bg-slate-700'}`}></div>
-                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-40 bg-white p-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none transform translate-y-2 group-hover:translate-y-0 text-center z-30">
-                    <div className="font-bold text-slate-900 text-xs">{asset.name}</div>
-                    <div className="text-[10px] text-slate-500">{asset.type}</div>
-                    {asset.state === 'Critical' && <div className="text-[9px] text-red-600 font-bold mt-0.5">Mantenimiento Urgente</div>}
-                </div>
-             </div>
-          </div>
-        ))}
-
-        {/* Legend / Layer Filters (Top Right) - Now Interactive */}
-        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-gray-100 text-xs space-y-2 z-20">
-            <button onClick={() => toggleLayer('patrimonio')} className={`flex items-center gap-2 w-full hover:bg-black/5 p-1 rounded transition-colors ${!layers.patrimonio ? 'opacity-50 grayscale' : ''}`}>
-                <div className="h-3 w-3 rounded-full bg-brand-600 border border-white shrink-0"></div>
-                <span className="text-slate-700 font-medium">Patrimonio</span>
-            </button>
-            <button onClick={() => toggleLayer('semilleros')} className={`flex items-center gap-2 w-full hover:bg-black/5 p-1 rounded transition-colors ${!layers.semilleros ? 'opacity-50 grayscale' : ''}`}>
-                <div className="h-3 w-3 rounded-full bg-indigo-600 border border-white shrink-0"></div>
-                <span className="text-slate-700 font-medium">Semilleros</span>
-            </button>
-            <button onClick={() => toggleLayer('infraestructura')} className={`flex items-center gap-2 w-full hover:bg-black/5 p-1 rounded transition-colors ${!layers.infraestructura ? 'opacity-50 grayscale' : ''}`}>
-                <div className="h-3 w-3 rounded-sm bg-slate-700 border border-white shrink-0"></div>
-                <span className="text-slate-700 font-medium">Infraestructura</span>
-            </button>
-             <button onClick={() => toggleLayer('alerta')} className={`flex items-center gap-2 w-full hover:bg-black/5 p-1 rounded transition-colors ${!layers.alerta ? 'opacity-50 grayscale' : ''}`}>
-                <div className="h-3 w-3 rounded-sm bg-red-500 border border-white shrink-0"></div>
-                <span className="text-slate-700 font-medium">Alerta</span>
-            </button>
-        </div>
-
-        {/* Geo Filter (Bottom Left) */}
-        <div className="absolute bottom-8 left-8 bg-white/95 backdrop-blur p-4 rounded-2xl shadow-xl border border-gray-100 w-72 z-20">
-            <div className="flex items-center gap-2 mb-3 text-slate-400">
-                <Filter className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-wider">Filtrar Mapa</span>
+      <div className="relative flex-1 bg-[#f8fafc] overflow-hidden">
+        {!isMapReady && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white">
+                <Loader2 className="w-10 h-10 text-brand-500 animate-spin mb-6" />
+                <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em]">Sincronizando Cartografía...</span>
             </div>
-            <div className="space-y-3">
-                <div>
-                    <label className="block text-[10px] font-medium text-slate-500 mb-1 ml-1">Estado</label>
-                    <select 
-                        value={selectedState}
-                        onChange={(e) => setSelectedState(e.target.value)}
-                        className="w-full bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-700 py-2 px-3 focus:ring-2 focus:ring-brand-100 outline-none"
-                    >
-                        <option value="Todos">Todos</option>
-                        {STATES.map(state => (
-                            <option key={state} value={state}>{state}</option>
-                        ))}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-[10px] font-medium text-slate-500 mb-1 ml-1">Municipio / Localidad</label>
-                    <input 
-                        type="text" 
-                        placeholder="Buscar..."
-                        value={municipalityFilter}
-                        onChange={(e) => setMunicipalityFilter(e.target.value)}
-                        className="w-full bg-slate-50 border-none rounded-lg text-xs font-medium text-slate-700 py-2 px-3 focus:ring-2 focus:ring-brand-100 outline-none"
-                    />
-                </div>
-            </div>
-        </div>
+        )}
+        <div ref={mapContainerRef} className="w-full h-full z-10" />
 
+        <div className="absolute bottom-12 right-12 bg-white/95 backdrop-blur-xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] rounded-[2.5rem] p-10 space-y-6 z-[1000] border border-slate-100 min-w-[300px]">
+           <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] border-b pb-6 mb-4 flex justify-between items-center">
+             Capas Activas <Globe className="w-3 h-3" />
+           </h4>
+           <div className="space-y-5">
+                <button onClick={() => setLayers(l => ({...l, patrimonio: !l.patrimonio}))} className={`flex items-center gap-5 w-full transition-all group ${!layers.patrimonio ? 'opacity-30 grayscale' : 'hover:translate-x-2'}`}>
+                    <div className="h-7 w-7 rounded-full bg-brand-500 shadow-xl border-2 border-white flex items-center justify-center">
+                        <Landmark className="w-3 h-3 text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-800 tracking-tight group-hover:text-brand-600">Patrimonio Cultural</span>
+                </button>
+                <button onClick={() => setLayers(l => ({...l, infraestructura: !l.infraestructura}))} className={`flex items-center gap-5 w-full transition-all group ${!layers.infraestructura ? 'opacity-30 grayscale' : 'hover:translate-x-2'}`}>
+                    <div className="h-6 w-6 bg-blue-600 rounded-full shadow-xl border-2 border-white"></div>
+                    <span className="text-xs font-bold text-slate-800 tracking-tight group-hover:text-blue-600">Proyectos PAICE</span>
+                </button>
+           </div>
+        </div>
       </div>
     </div>
   );

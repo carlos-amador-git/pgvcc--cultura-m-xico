@@ -19,16 +19,26 @@ export interface Semillero {
 
 export interface Asset {
   id: string;
-  name: string;
-  type: 'Museum' | 'Theater' | 'Library' | 'Center';
-  state: 'Operational' | 'Maintenance Required' | 'Critical';
+  name: string; // Nombre del proyecto beneficiado
+  type: string; // Instancia beneficiaria o Tipo de recinto (inferido)
+  state: 'Operational' | 'Maintenance Required' | 'Critical' | 'Project'; // Mapped from logic or default
+  
+  // Real PAICE Data Fields
+  year?: number;
+  amount?: number;
+  beneficiary?: string;
+  projectLink?: string;
+  municipality?: string;
+
+  // Legacy fields kept for compatibility (can be mocked)
   ticketsOpen: number;
   visitors: number;
   statusSummary: string;
   actionsInProgress: string[];
   actionsNext: string[];
   lastInspection: string;
-  location: string;
+  
+  location: string; // Estado
   coordinates: {
     top: number;
     left: number;
@@ -55,4 +65,20 @@ export interface HeritageSite {
     top: number;
     left: number;
   };
+}
+
+export interface ScheduledVisit {
+  id: string;
+  siteId: number;
+  siteTitle: string;
+  date: string;
+  timeSlot: string;
+  type: string;
+  status: 'Pending' | 'Confirmed' | 'Completed';
+  requesterName: string;
+  title?: string;
+  description?: string;
+  location?: string;
+  labelColor?: string;
+  reminders?: number[];
 }
