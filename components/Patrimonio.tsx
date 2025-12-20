@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Calendar, ArrowRight, X, Search, Landmark, Image as ImageIcon, Share2, Twitter, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Calendar, ArrowRight, X, Search, Landmark, Image as ImageIcon, Share2, Twitter, Copy, Check, ChevronDown, ChevronUp, ChevronLeft } from 'lucide-react';
 import { HERITAGE_SITES } from '../constants';
 import { CalendarView } from './CalendarView';
 import { ScheduledVisit } from '../types';
@@ -7,6 +7,7 @@ import { SwitchTransition, CSSTransition } from 'react-transition-group';
 
 interface PatrimonioProps {
   initialSiteId?: number | null;
+  onBack?: () => void;
   onScheduleVisit: (visit: ScheduledVisit) => void;
   onMoveVisit?: (visitId: string, updates: Pick<ScheduledVisit, 'date' | 'timeSlot'>) => void | Promise<void>;
   onUpsertVisit?: (visit: ScheduledVisit) => void | Promise<void>;
@@ -14,7 +15,7 @@ interface PatrimonioProps {
   scheduledVisits: ScheduledVisit[];
 }
 
-export const Patrimonio: React.FC<PatrimonioProps> = ({ initialSiteId, onScheduleVisit, onMoveVisit, onUpsertVisit, onDeleteVisit, scheduledVisits }) => {
+export const Patrimonio: React.FC<PatrimonioProps> = ({ initialSiteId, onBack, onScheduleVisit, onMoveVisit, onUpsertVisit, onDeleteVisit, scheduledVisits }) => {
   const [selectedSiteIndex, setSelectedSiteIndex] = useState<number>(0);
   const [showCatalog, setShowCatalog] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -88,6 +89,16 @@ export const Patrimonio: React.FC<PatrimonioProps> = ({ initialSiteId, onSchedul
     <div className="bg-white min-h-screen pb-20 relative">
       {/* Hero Principal */}
       <div className="relative h-[65vh] w-full overflow-hidden bg-slate-900">
+         {onBack && (
+           <button
+              type="button"
+              onClick={onBack}
+              className="absolute top-8 left-8 z-20 p-4 md:p-5 bg-white/90 backdrop-blur-xl rounded-full shadow-2xl border border-white/60 hover:bg-white transition-all active:scale-95"
+              aria-label="Volver al mapa"
+            >
+              <ChevronLeft className="h-5 w-5 text-slate-950" />
+            </button>
+         )}
          <img 
             src={selectedSite.image} 
             alt={selectedSite.title} 

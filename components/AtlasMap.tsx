@@ -8,6 +8,10 @@ interface AtlasMapProps {
 
 declare const L: any; // Integración global vía script tag
 
+export const triggerAtlasMapResize = () => {
+  window.dispatchEvent(new Event('pgvcc:atlas-map-resize'));
+};
+
 const ALL_STATES = Array.from(new Set([...HERITAGE_SITES, ...ASSETS_DATA].map(item => {
     const parts = item.location.split(',');
     return parts.length > 1 ? parts[1].trim() : parts[0].trim();
@@ -26,7 +30,94 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
   const [isMapReady, setIsMapReady] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const tileLayerRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const pulseMarkersRef = useRef<any[]>([]);
+  const resizeTimerRef = useRef<number | null>(null);
+  const centerTimerRef = useRef<number | null>(null);
+
+  const scheduleCenterPulses = (delayMs = 0, opts?: { force?: boolean }) => {
+    if (centerTimerRef.current) window.clearTimeout(centerTimerRef.current);
+    centerTimerRef.current = window.setTimeout(() => centerPulses(opts), delayMs);
+  };
+
+  const centerPulses = (opts?: { force?: boolean }) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const pulses = pulseMarkersRef.current;
+    if (!pulses || pulses.length === 0) return;
+
+    const size = map.getSize();
+    const padding = Math.max(56, Math.min(96, Math.round(Math.min(size.x, size.y) * 0.12)));
+    const minCenterDistance = 44;
+    const minZoom = 4;
+
+    const isComfortablyVisible = pulses.every(m => {
+      if (!m?.getLatLng) return true;
+      const p = map.latLngToContainerPoint(m.getLatLng());
+      return p.x >= padding && p.y >= padding && p.x <= size.x - padding && p.y <= size.y - padding;
+    });
+
+    if (!opts?.force && isComfortablyVisible) return;
+
+    if (pulses.length === 1) {
+      const ll = pulses[0]?.getLatLng?.();
+      if (!ll) return;
+      map.panTo(ll, { animate: true, duration: 0.7 });
+      return;
+    }
+
+    const group = L.featureGroup(pulses);
+    const bounds = group.getBounds();
+    map.flyToBounds(bounds, {
+      padding: [padding, padding],
+      maxZoom: 7,
+      animate: true,
+      duration: 0.8
+    });
+
+    const resolveOverlap = (attempt: number) => {
+      if (attempt >= 3) return;
+      if (map.getZoom() <= minZoom) return;
+
+      const points = pulses
+        .map(m => (m?.getLatLng ? map.latLngToContainerPoint(m.getLatLng()) : null))
+        .filter(Boolean);
+
+      let minDist = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+          const dx = points[i].x - points[j].x;
+          const dy = points[i].y - points[j].y;
+          const d = Math.hypot(dx, dy);
+          if (d < minDist) minDist = d;
+        }
+      }
+
+      if (minDist >= minCenterDistance) return;
+
+      map.setView(bounds.getCenter(), map.getZoom() - 1, { animate: true, duration: 0.5 });
+      map.once('moveend', () => resolveOverlap(attempt + 1));
+    };
+
+    map.once('moveend', () => resolveOverlap(0));
+  };
+
+  const resizeMap = (opts?: { redrawTiles?: boolean }) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.invalidateSize(true);
+    if (opts?.redrawTiles !== false) {
+      const tileLayer = tileLayerRef.current;
+      if (tileLayer?.redraw) tileLayer.redraw();
+    }
+    scheduleCenterPulses(0);
+  };
+
+  const scheduleResize = (delayMs = 150) => {
+    if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+    resizeTimerRef.current = window.setTimeout(() => resizeMap(), delayMs);
+  };
 
   // Inicialización de Leaflet
   useEffect(() => {
@@ -37,19 +128,47 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
         attributionControl: false
     }).setView([23.6, -102.5], 5);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 18
     }).addTo(map);
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
     mapInstanceRef.current = map;
+    tileLayerRef.current = tileLayer;
     setIsMapReady(true);
 
     return () => {
+        if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+        if (centerTimerRef.current) window.clearTimeout(centerTimerRef.current);
         map.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMapReady) return;
+    const handleWindowResize = () => scheduleResize(150);
+    const handleManualResize = () => resizeMap();
+    window.addEventListener('resize', handleWindowResize, { passive: true });
+    window.addEventListener('pgvcc:atlas-map-resize', handleManualResize);
+
+    const el = mapContainerRef.current;
+    let ro: ResizeObserver | null = null;
+    if (el && 'ResizeObserver' in window) {
+      ro = new ResizeObserver(() => scheduleResize(100));
+      ro.observe(el);
+    }
+
+    requestAnimationFrame(() => resizeMap());
+    window.setTimeout(() => resizeMap(), 250);
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+      window.removeEventListener('pgvcc:atlas-map-resize', handleManualResize);
+      if (ro) ro.disconnect();
+      if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+    };
+  }, [isMapReady]);
 
   // Manejo de Marcadores dinámicos
   useEffect(() => {
@@ -57,6 +176,7 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
 
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
+    pulseMarkersRef.current = [];
 
     const map = mapInstanceRef.current;
 
@@ -67,15 +187,17 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
             const icon = L.divIcon({
                 className: 'custom-marker',
                 html: `
-                    <div class="relative group">
-                        <div class="h-9 w-9 rounded-full bg-[#ec4899] border-[3px] border-white shadow-[0_0_20px_rgba(236,72,153,0.6)] flex items-center justify-center transition-all hover:scale-125">
+                    <div class="pgvcc-pulse-root" style="position:relative;width:56px;height:56px;">
+                        <div class="pgvcc-pulse-core" style="position:absolute;left:50%;top:50%;width:36px;height:36px;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;border-radius:9999px;background:#ec4899;border:3px solid #fff;box-shadow:0 0 20px rgba(236,72,153,0.6);transition:transform 180ms ease;">
                             <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                         </div>
-                        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-[#ec4899]/20 animate-ping"></div>
+                        <div class="pgvcc-pulse-ring" style="pointer-events:none;position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);">
+                            <div class="animate-ping" style="width:56px;height:56px;border-radius:9999px;background:rgba(236,72,153,0.2);"></div>
+                        </div>
                     </div>
                 `,
-                iconSize: [36, 36],
-                iconAnchor: [18, 18]
+                iconSize: [56, 56],
+                iconAnchor: [28, 28]
             });
 
             const marker = L.marker(toLatLng(site.coordinates.top, site.coordinates.left), { icon })
@@ -84,6 +206,7 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
                 .bindTooltip(site.title, { direction: 'top', className: 'rounded-xl shadow-2xl px-4 py-2 font-bold bg-slate-900 text-white' });
             
             markersRef.current.push(marker);
+            pulseMarkersRef.current.push(marker);
         });
     }
 
@@ -106,10 +229,9 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
         });
     }
 
-    if (selectedState !== 'Todos' && markersRef.current.length > 0) {
-        const group = L.featureGroup(markersRef.current);
-        map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 8 });
-    }
+    scheduleCenterPulses(0, { force: selectedState !== 'Todos' });
+
+    scheduleResize(60);
 
   }, [layers, selectedState, isMapReady, onNavigateToHeritage]);
 
@@ -124,8 +246,8 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
   );
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full flex-col lg:flex-row relative bg-white overflow-hidden">
-      <div className="w-full bg-white lg:w-96 lg:border-r overflow-y-auto z-20 flex flex-col border-slate-100 shadow-[20px_0_40px_-15px_rgba(0,0,0,0.03)]">
+    <div className="flex h-[calc(100vh-80px)] w-full flex-col lg:flex-row relative bg-white overflow-hidden min-h-0">
+      <div className="w-full bg-white lg:w-96 lg:border-r overflow-y-auto z-20 flex flex-col border-slate-100 shadow-[20px_0_40px_-15px_rgba(0,0,0,0.03)] min-h-0">
         <div className="p-10 sticky top-0 bg-white/95 backdrop-blur z-20 border-b shrink-0">
           <h2 className="mb-2 font-serif text-4xl font-bold text-slate-900 tracking-tight leading-none">Atlas Cultural</h2>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mb-10 italic">Plataforma de Consulta Nacional</p>
@@ -194,14 +316,14 @@ export const AtlasMap: React.FC<AtlasMapProps> = ({ onNavigateToHeritage }) => {
         </div>
       </div>
 
-      <div className="relative flex-1 bg-[#f8fafc] overflow-hidden">
+      <div className="relative flex-1 bg-[#f8fafc] overflow-hidden min-h-[360px] lg:min-h-0">
         {!isMapReady && (
             <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white">
                 <Loader2 className="w-10 h-10 text-brand-500 animate-spin mb-6" />
                 <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em]">Sincronizando Cartografía...</span>
             </div>
         )}
-        <div ref={mapContainerRef} className="w-full h-full z-10" />
+        <div ref={mapContainerRef} className="w-full h-full z-10 min-h-[360px] lg:min-h-0" />
 
         <div className="absolute bottom-12 right-12 bg-white/95 backdrop-blur-xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] rounded-[2.5rem] p-10 space-y-6 z-[1000] border border-slate-100 min-w-[300px]">
            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] border-b pb-6 mb-4 flex justify-between items-center">

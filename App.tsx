@@ -8,6 +8,20 @@ import { AppMode, ScheduledVisit } from './types';
 import { LayoutGrid, Building2, Menu, X, Globe } from 'lucide-react';
 import { SwitchTransition, CSSTransition } from 'react-transition-group';
 
+type ActiveView = 'home' | 'atlas' | 'patrimonio' | 'dashboard' | 'infrastructure';
+
+type NavState = {
+  activeView: ActiveView;
+  mode: AppMode;
+  initialHeritageId: number | null;
+};
+
+const INITIAL_NAV_STATE: NavState = {
+  activeView: 'home',
+  mode: AppMode.PUBLIC,
+  initialHeritageId: null
+};
+
 const IconHacienda = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M2 22h20" />
@@ -40,10 +54,11 @@ const IconPyramid = ({ className }: { className?: string }) => (
 );
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<AppMode>(AppMode.PUBLIC);
-  const [activeView, setActiveView] = useState<'home' | 'atlas' | 'patrimonio' | 'dashboard' | 'infrastructure'>('home');
+  const [mode, setMode] = useState<AppMode>(INITIAL_NAV_STATE.mode);
+  const [activeView, setActiveView] = useState<ActiveView>(INITIAL_NAV_STATE.activeView);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [initialHeritageId, setInitialHeritageId] = useState<number | null>(null);
+  const [initialHeritageId, setInitialHeritageId] = useState<number | null>(INITIAL_NAV_STATE.initialHeritageId);
+  const isHandlingPopStateRef = useRef(false);
   
   // Usamos una referencia para evitar el error findDOMNode de react-transition-group
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -92,16 +107,70 @@ const App: React.FC = () => {
     } catch {}
   }, [scheduledVisits]);
 
-  const handleNavigateToHeritage = (id: number) => {
-    setInitialHeritageId(id);
-    setActiveView('patrimonio');
+  const isNavState = (value: unknown): value is NavState => {
+    const v = value as NavState;
+    return Boolean(
+      v &&
+        typeof v === 'object' &&
+        (v.activeView === 'home' ||
+          v.activeView === 'atlas' ||
+          v.activeView === 'patrimonio' ||
+          v.activeView === 'dashboard' ||
+          v.activeView === 'infrastructure') &&
+        (v.mode === AppMode.PUBLIC || v.mode === AppMode.ADMIN) &&
+        (typeof v.initialHeritageId === 'number' || v.initialHeritageId === null)
+    );
   };
 
-  const handleNavClick = (view: typeof activeView, newMode: AppMode) => {
-    setMode(newMode);
-    setActiveView(view);
+  useEffect(() => {
+    try {
+      window.history.replaceState(INITIAL_NAV_STATE, document.title);
+    } catch {}
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (!isNavState(event.state)) return;
+
+      isHandlingPopStateRef.current = true;
+      setMode(event.state.mode);
+      setActiveView(event.state.activeView);
+      setInitialHeritageId(event.state.initialHeritageId);
+      setMobileMenuOpen(false);
+      setTimeout(() => {
+        isHandlingPopStateRef.current = false;
+      }, 0);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const applyNavigation = (next: NavState, historyBehavior: 'push' | 'replace' = 'push') => {
+    setMode(next.mode);
+    setActiveView(next.activeView);
+    setInitialHeritageId(next.initialHeritageId);
     setMobileMenuOpen(false);
-    if (view === 'patrimonio') setInitialHeritageId(null);
+
+    if (isHandlingPopStateRef.current) return;
+    try {
+      if (historyBehavior === 'push') window.history.pushState(next, document.title);
+      if (historyBehavior === 'replace') window.history.replaceState(next, document.title);
+    } catch {}
+  };
+
+  const handleNavigateToHeritage = (id: number) => {
+    applyNavigation({ activeView: 'patrimonio', mode: AppMode.PUBLIC, initialHeritageId: id }, 'push');
+  };
+
+  const handleNavClick = (view: ActiveView, newMode: AppMode) => {
+    applyNavigation({ activeView: view, mode: newMode, initialHeritageId: null }, 'push');
+  };
+
+  const handleBackFromPatrimonio = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    applyNavigation({ activeView: 'atlas', mode: AppMode.PUBLIC, initialHeritageId: null }, 'replace');
   };
 
   const handleAddVisit = (visit: ScheduledVisit) => {
@@ -128,8 +197,8 @@ const App: React.FC = () => {
     switch (activeView) {
       case 'home': return <Hero />;
       case 'atlas': return <AtlasMap onNavigateToHeritage={handleNavigateToHeritage} />;
-      case 'patrimonio': return <Patrimonio initialSiteId={initialHeritageId} onScheduleVisit={handleAddVisit} scheduledVisits={scheduledVisits} onMoveVisit={handleMoveVisit} onUpsertVisit={handleUpsertVisit} onDeleteVisit={handleDeleteVisit} />;
-      case 'dashboard': return <Dashboard onNavigate={(v) => setActiveView(v)} />;
+      case 'patrimonio': return <Patrimonio initialSiteId={initialHeritageId} onBack={handleBackFromPatrimonio} onScheduleVisit={handleAddVisit} scheduledVisits={scheduledVisits} onMoveVisit={handleMoveVisit} onUpsertVisit={handleUpsertVisit} onDeleteVisit={handleDeleteVisit} />;
+      case 'dashboard': return <Dashboard onNavigate={(v) => applyNavigation({ activeView: v, mode, initialHeritageId: null }, 'push')} />;
       case 'infrastructure': return <InfrastructureList scheduledVisits={scheduledVisits} onMoveVisit={handleMoveVisit} onUpsertVisit={handleUpsertVisit} onDeleteVisit={handleDeleteVisit} />;
       default: return <Hero />;
     }
