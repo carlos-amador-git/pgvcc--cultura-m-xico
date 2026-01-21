@@ -1,0 +1,7 @@
+{
+  "name": "PGVCC - Cultura México",
+  "description": "Plataforma de Gestión y Vinculación de la Cultura Comunitaria y Patrimonio Nacional. Un ecosistema digital para democratizar la cultura y optimizar la gestión interna.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
