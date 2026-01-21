@@ -1,9 +1,9 @@
 import { Asset, KPI, Semillero, HeritageSite } from './types';
 
 export const HERO_IMAGES = [
-  "https://picsum.photos/id/1015/1600/900", // Landscapes
-  "https://picsum.photos/id/1047/1600/900", // Urban
-  "https://picsum.photos/id/1016/1600/900", // Nature
+  "/images/600.jpg",
+  "/images/800.jpg",
+  "/images/900.jpg",
 ];
 
 export const SEMILLEROS_DATA: Semillero[] = [
