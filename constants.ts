@@ -1,9 +1,26 @@
 import { Asset, KPI, Semillero, HeritageSite } from './types';
 
+// Images
+import hero600 from '@/assets/images/600.jpg';
+import hero800 from '@/assets/images/800.jpg';
+import hero900 from '@/assets/images/900.jpg';
+
+import chichen600 from '@/assets/images/chichen-itza/600.jpg';
+import chichen700 from '@/assets/images/chichen-itza/700.jpg';
+import chichen800 from '@/assets/images/chichen-itza/800.jpg';
+
+import centro600 from '@/assets/images/centro-historico/600.jpg';
+import centro800 from '@/assets/images/centro-historico/800.jpg';
+import centro900 from '@/assets/images/centro-historico/900.jpg';
+
+import monte600 from '@/assets/images/monte-alban/600.jpg';
+import monte800 from '@/assets/images/monte-alban/800.jpg';
+import monte900 from '@/assets/images/monte-alban/900.jpg';
+
 export const HERO_IMAGES = [
-  "/images/600.jpg",
-  "/images/800.jpg",
-  "/images/900.jpg",
+  hero600,
+  hero800,
+  hero900,
 ];
 
 export const SEMILLEROS_DATA: Semillero[] = [
@@ -141,8 +158,8 @@ export const HERITAGE_SITES: HeritageSite[] = [
     title: "Chichén Itzá", 
     location: "Yucatán", 
     period: "Maya (525 d.C.)", 
-    image: "/images/chichen-itza/600.jpg", 
-    gallery: ["/images/chichen-itza/700.jpg", "/images/chichen-itza/800.jpg"], 
+    image: chichen600, 
+    gallery: [chichen700, chichen800], 
     description: "Chichén Itzá es uno de los principales sitios arqueológicos de la península de Yucatán, en México. Fue uno de los asentamientos más importantes de la civilización maya y un centro ceremonial de gran relevancia durante el periodo Posclásico. Su nombre significa 'Boca del pozo de los itzaes', haciendo referencia al Cenote Sagrado. \n\nEl sitio es famoso por estructuras como la Pirámide de Kukulcán (El Castillo), reconocida como una de las Siete Maravillas del Mundo Moderno. Durante los equinoccios de primavera y otoño, se puede observar el efecto de luz y sombra que simula el descenso de una serpiente emplumada por las escalinatas de la pirámide. Además del Castillo, destacan el Juego de Pelota más grande de Mesoamérica, el Templo de los Guerreros y el Observatorio astronómico conocido como 'El Caracol'.", 
     coordinates: { top: 65, left: 92 } 
   },
@@ -151,8 +168,8 @@ export const HERITAGE_SITES: HeritageSite[] = [
     title: "Centro Histórico CDMX", 
     location: "CDMX", 
     period: "Virreinal", 
-    image: "/images/centro-historico/600.jpg", 
-    gallery: ["/images/centro-historico/800.jpg", "/images/centro-historico/900.jpg"], 
+    image: centro600, 
+    gallery: [centro800, centro900], 
     description: "El Centro Histórico de la Ciudad de México es el núcleo original alrededor del cual creció la actual capital mexicana. Es un mosaico vivo de historia donde convergen las épocas prehispánica, colonial y moderna. Declarado Patrimonio de la Humanidad por la UNESCO en 1987, alberga tesoros invaluables como el Templo Mayor, vestigio de la antigua Tenochtitlan, y la majestuosa Catedral Metropolitana, una de las obras máximas del arte hispanoamericano. \n\nCaminar por sus calles es recorrer siglos de arquitectura: desde los palacios novohispanos conocidos como la 'Ciudad de los Palacios', hasta edificios porfirianos como el Palacio de Bellas Artes. El Zócalo, o Plaza de la Constitución, es el corazón político y cultural del país, escenario de las celebraciones nacionales más importantes. Este espacio no solo es un catálogo arquitectónico, sino un centro de actividad económica y social vibrante que define la identidad de México.", 
     coordinates: { top: 71, left: 59 } 
   },
@@ -161,8 +178,8 @@ export const HERITAGE_SITES: HeritageSite[] = [
     title: "Monte Albán", 
     location: "Oaxaca", 
     period: "Zapoteca", 
-    image: "/images/monte-alban/600.jpg", 
-    gallery: ["/images/monte-alban/800.jpg", "/images/monte-alban/900.jpg"], 
+    image: monte600, 
+    gallery: [monte800, monte900], 
     description: "Monte Albán fue la antigua capital ceremonial y militar de los zapotecos, establecida alrededor del 500 a.C. sobre un cerro cuya cima fue nivelada artificialmente para albergar una de las plazas más impresionantes de Mesoamérica. Situada en los Valles Centrales de Oaxaca, esta zona arqueológica destaca por su urbanismo avanzado y sus estrechos vínculos con la astronomía y la observación del cielo. \n\nEntre sus edificios principales se encuentran la Gran Plaza, los Edificios J y L (con los famosos relieves de 'Los Danzantes') y las plataformas norte y sur. El sitio también es célebre por su complejo sistema de tumbas, especialmente la Tumba 7, donde se encontró uno de los tesoros de orfebrería más ricos del continente. Como centro de poder durante más de mil años, Monte Albán es un testimonio excepcional de la sofisticación técnica y espiritual de las culturas del México antiguo.", 
     coordinates: { top: 84, left: 66 } 
   },
