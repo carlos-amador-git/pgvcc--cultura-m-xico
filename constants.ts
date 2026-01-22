@@ -141,8 +141,8 @@ export const HERITAGE_SITES: HeritageSite[] = [
     title: "Chichén Itzá", 
     location: "Yucatán", 
     period: "Maya (525 d.C.)", 
-    image: "/images/Chichen Itza/600.jpg", 
-    gallery: ["/images/Chichen Itza/700.jpg", "/images/Chichen Itza/800.jpg"], 
+    image: "/images/chichen-itza/600.jpg", 
+    gallery: ["/images/chichen-itza/700.jpg", "/images/chichen-itza/800.jpg"], 
     description: "Chichén Itzá es uno de los principales sitios arqueológicos de la península de Yucatán, en México. Fue uno de los asentamientos más importantes de la civilización maya y un centro ceremonial de gran relevancia durante el periodo Posclásico. Su nombre significa 'Boca del pozo de los itzaes', haciendo referencia al Cenote Sagrado. \n\nEl sitio es famoso por estructuras como la Pirámide de Kukulcán (El Castillo), reconocida como una de las Siete Maravillas del Mundo Moderno. Durante los equinoccios de primavera y otoño, se puede observar el efecto de luz y sombra que simula el descenso de una serpiente emplumada por las escalinatas de la pirámide. Además del Castillo, destacan el Juego de Pelota más grande de Mesoamérica, el Templo de los Guerreros y el Observatorio astronómico conocido como 'El Caracol'.", 
     coordinates: { top: 65, left: 92 } 
   },
@@ -151,8 +151,8 @@ export const HERITAGE_SITES: HeritageSite[] = [
     title: "Centro Histórico CDMX", 
     location: "CDMX", 
     period: "Virreinal", 
-    image: "/images/Centro Historico/600.jpg", 
-    gallery: ["/images/Centro Historico/800.jpg", "/images/Centro Historico/900.jpg"], 
+    image: "/images/centro-historico/600.jpg", 
+    gallery: ["/images/centro-historico/800.jpg", "/images/centro-historico/900.jpg"], 
     description: "El Centro Histórico de la Ciudad de México es el núcleo original alrededor del cual creció la actual capital mexicana. Es un mosaico vivo de historia donde convergen las épocas prehispánica, colonial y moderna. Declarado Patrimonio de la Humanidad por la UNESCO en 1987, alberga tesoros invaluables como el Templo Mayor, vestigio de la antigua Tenochtitlan, y la majestuosa Catedral Metropolitana, una de las obras máximas del arte hispanoamericano. \n\nCaminar por sus calles es recorrer siglos de arquitectura: desde los palacios novohispanos conocidos como la 'Ciudad de los Palacios', hasta edificios porfirianos como el Palacio de Bellas Artes. El Zócalo, o Plaza de la Constitución, es el corazón político y cultural del país, escenario de las celebraciones nacionales más importantes. Este espacio no solo es un catálogo arquitectónico, sino un centro de actividad económica y social vibrante que define la identidad de México.", 
     coordinates: { top: 71, left: 59 } 
   },
@@ -161,8 +161,8 @@ export const HERITAGE_SITES: HeritageSite[] = [
     title: "Monte Albán", 
     location: "Oaxaca", 
     period: "Zapoteca", 
-    image: "/images/MONTE ALBAN/600.jpg", 
-    gallery: ["/images/MONTE ALBAN/800.jpg", "/images/MONTE ALBAN/900.jpg"], 
+    image: "/images/monte-alban/600.jpg", 
+    gallery: ["/images/monte-alban/800.jpg", "/images/monte-alban/900.jpg"], 
     description: "Monte Albán fue la antigua capital ceremonial y militar de los zapotecos, establecida alrededor del 500 a.C. sobre un cerro cuya cima fue nivelada artificialmente para albergar una de las plazas más impresionantes de Mesoamérica. Situada en los Valles Centrales de Oaxaca, esta zona arqueológica destaca por su urbanismo avanzado y sus estrechos vínculos con la astronomía y la observación del cielo. \n\nEntre sus edificios principales se encuentran la Gran Plaza, los Edificios J y L (con los famosos relieves de 'Los Danzantes') y las plataformas norte y sur. El sitio también es célebre por su complejo sistema de tumbas, especialmente la Tumba 7, donde se encontró uno de los tesoros de orfebrería más ricos del continente. Como centro de poder durante más de mil años, Monte Albán es un testimonio excepcional de la sofisticación técnica y espiritual de las culturas del México antiguo.", 
     coordinates: { top: 84, left: 66 } 
   },
